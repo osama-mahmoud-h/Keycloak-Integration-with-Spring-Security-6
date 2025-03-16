@@ -1,0 +1,48 @@
+version: '3.8'
+services:
+  api:
+    container_name: spring_auth_api
+    build:
+      context: .
+    environment:
+      - SPRING_APPLICATION_NAME:spring-keycloak
+      - SERVER_PORT:8081
+      - SPRING_SECURITY_OAUTH2_RESOURCESERVER_JWT_ISSUER_URI:http://localhost:8080/realms/social-network-realm
+      - JWT_AUTH_CONVERTER_RESOURCE_ID:social-network-backend
+      - JWT_AUTH_CONVERTER_PRINCIPAL_ATTRIBUTE_NAME:preferred_username
+      - SPRING_DATASOURCE_URL=jdbc:postgresql://db:5432/keycloak_spring_auth
+      - SPRING_DATASOURCE_USERNAME=osama
+      - SPRING_DATASOURCE_PASSWORD=password
+      - SPRING_JPA_HIBERNATE_DDL_AUTO=update
+      - SPRING_JPA_PROPERTIES_HIBERNATE_DIALECT=org.hibernate.dialect.PostgreSQLDialect
+      - SPRING_JPA_SHOW_SQL=true
+    ports:
+      - "8081:8081"
+
+    depends_on:
+        - db
+    networks:
+      -  keycloak-network
+
+  db:
+    container_name: spring_auth_db
+    image: postgres:16
+    environment:
+      POSTGRES_USER: osama
+      POSTGRES_PASSWORD: password
+      POSTGRES_DB: keycloak_spring_auth
+    ports:
+        - "5434:5432"
+
+    volumes:
+        - auth_pg_db_data:/var/lib/postgresql/data
+
+    networks:
+        - keycloak-network
+
+networks:
+    keycloak-network:
+        driver: bridge
+volumes:
+  auth_pg_db_data:
+      driver: local
