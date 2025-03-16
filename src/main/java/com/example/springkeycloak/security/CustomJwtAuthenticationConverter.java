@@ -1,16 +1,16 @@
 package com.example.springkeycloak.security;
 
-import lombok.AllArgsConstructor;
+import com.example.springkeycloak.model.AppUser;
+import com.example.springkeycloak.service.UserService;
 import lombok.NonNull;
 import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.core.convert.converter.Converter;
 import org.springframework.security.authentication.AbstractAuthenticationToken;
+import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.GrantedAuthority;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.oauth2.jwt.Jwt;
-import org.springframework.security.oauth2.jwt.JwtClaimNames;
-import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationToken;
 import org.springframework.security.oauth2.server.resource.authentication.JwtGrantedAuthoritiesConverter;
 import org.springframework.stereotype.Component;
 
@@ -18,30 +18,38 @@ import java.util.*;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
-import static java.util.stream.Collectors.toSet;
 
 @Component
+@RequiredArgsConstructor
 public class CustomJwtAuthenticationConverter implements Converter<Jwt, AbstractAuthenticationToken> {
-
     @Value("${jwt.auth.converter.principal-attribute-name}")
    private String principalAttributeName;
 
     @Value("${jwt.auth.converter.resource-id}")
    private String resourceId ;
-
-    private final JwtGrantedAuthoritiesConverter jwtGrantedAuthoritiesConverter = new JwtGrantedAuthoritiesConverter();
+   private final JwtGrantedAuthoritiesConverter jwtGrantedAuthoritiesConverter = new JwtGrantedAuthoritiesConverter();
+   private final UserService userService;
 
     @Override
     public AbstractAuthenticationToken convert(@NonNull Jwt jwt) {
-        Collection<GrantedAuthority> authorities = Stream.concat(
-                jwtGrantedAuthoritiesConverter.convert(jwt).stream(),
-                extractAuthorityRoles(jwt).stream()).collect(Collectors.toSet());
+        Collection<GrantedAuthority> authorities = getAuthorities(jwt);
 
-        return new JwtAuthenticationToken(
-                jwt,
-                authorities,
-                getPrincipalClaimName(jwt)
+        // Load user from DB or create if not found
+        AppUser appUser = userService.createNewUserIfNotExistsFromJwt(jwt);
+        appUser.setRoles(authorities.stream()
+                .map(GrantedAuthority::getAuthority)
+                .collect(Collectors.toList()));
+
+        return new UsernamePasswordAuthenticationToken(
+                appUser, jwt, authorities
         );
+    }
+
+    private Collection<GrantedAuthority> getAuthorities(Jwt jwt) {
+        return Stream.concat(
+                jwtGrantedAuthoritiesConverter.convert(jwt).stream(),
+                extractRolesFromJwt(jwt).stream()
+        ).collect(Collectors.toSet());
     }
 
     @Override
@@ -49,39 +57,38 @@ public class CustomJwtAuthenticationConverter implements Converter<Jwt, Abstract
         return Converter.super.andThen(after);
     }
 
-    private String getPrincipalClaimName(Jwt jwt) {
-        String claimName = JwtClaimNames.SUB;
-        if(this.principalAttributeName != null){
-            claimName = this.principalAttributeName;
-        }
-        return jwt.getClaim(claimName);
-    }
 
-    private Collection<? extends GrantedAuthority> extractAuthorityRoles(Jwt jwt) {
-        // Safely get the "resource_access" claim and cast it to a Map, handling possible nulls
-        Map<?,?> resourceAccess = Optional.ofNullable(jwt.getClaim("resource_access"))
+    private Collection<? extends GrantedAuthority> extractRolesFromJwt(Jwt jwt) {
+        // Step 1: Extract "resource_access" claim safely
+        Map<?, ?> resourceAccess = Optional.ofNullable(jwt.getClaim("resource_access"))
                 .filter(Map.class::isInstance)
                 .map(Map.class::cast)
                 .orElse(Collections.emptyMap());
 
-        System.out.println("resourceAccess: " + resourceAccess);
+       // System.out.println("resourceAccess: " + resourceAccess);
 
-        // Safely get the client map from resourceAccess
-        Map<String, List<String>> client = Optional.ofNullable((Map<String, List<String>>) resourceAccess.get(this.resourceId))
+        // Step 2: Retrieve client-specific resource map
+        Map<String, ?> client = Optional.ofNullable((Map<String, ?>) resourceAccess.get(this.resourceId))
                 .orElse(Collections.emptyMap());
 
-        // Safely get the "roles" list, ensuring it is not null
+
+        // Step 3: Extract the list of roles
         List<String> roles = Optional.ofNullable(client.get("roles"))
+                .filter(List.class::isInstance)
+                .map(roleList -> ((List<?>) roleList).stream()
+                        .filter(String.class::isInstance)
+                        .map(String.class::cast)
+                        .collect(Collectors.toList()))
                 .orElse(Collections.emptyList());
 
-        // Convert roles into authorities, handling empty roles properly
-        var authorities = roles.stream()
+       // System.out.println("roles: " + roles);
+
+        // Step 4: Convert roles into authorities
+        Set<GrantedAuthority> authorities = roles.stream()
                 .map(role -> new SimpleGrantedAuthority("ROLE_" + role.replace('-', '_')))
                 .collect(Collectors.toSet());
 
-        //System.out.println("resourceId: " + this.resourceId);
-        System.out.println("authorities: " + authorities);
-
         return authorities;
     }
+
 }

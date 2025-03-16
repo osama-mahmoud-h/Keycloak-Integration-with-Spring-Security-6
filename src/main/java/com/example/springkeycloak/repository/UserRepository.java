@@ -1,0 +1,13 @@
+package com.example.springkeycloak.repository;
+
+import com.example.springkeycloak.model.AppUser;
+import org.springframework.data.jpa.repository.JpaRepository;
+
+import java.util.Optional;
+
+public interface UserRepository extends JpaRepository<AppUser, Long> {
+
+    Optional<AppUser> findByKeycloakUserId(String keycloakUserId);
+
+    Optional<AppUser> findByUsername(String username);
+}

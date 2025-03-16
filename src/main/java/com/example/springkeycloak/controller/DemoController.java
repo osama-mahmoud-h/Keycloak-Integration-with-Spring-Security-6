@@ -1,7 +1,9 @@
 package com.example.springkeycloak.controller;
 
 
+import com.example.springkeycloak.model.AppUser;
 import org.springframework.security.access.prepost.PreAuthorize;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
@@ -20,5 +22,13 @@ public class DemoController {
     @PreAuthorize("hasRole('ROLE_client_admin')")
     public String adminInfo(){
         return "Hello.. i am keycloak admin";
+    }
+
+    @GetMapping("/me")
+    @PreAuthorize("hasRole('ROLE_client_customer')")
+    public Object getCurrentUser(
+            @AuthenticationPrincipal AppUser userDetails
+            ) {
+        return userDetails;
     }
 }
